@@ -1,0 +1,922 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>将棋棋譜記憶力ゲーム</title>
+<link href="https://fonts.googleapis.com/css2?family=Noto+Serif+JP:wght@300;400;700&display=swap" rel="stylesheet">
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --bg:#0a0a0e;--bg2:rgba(255,255,255,0.04);--bg3:rgba(255,255,255,0.07);
+  --gold:#c8a84b;--gold-l:#e8c964;--gold-d:#92703a;
+  --border:rgba(200,168,75,0.18);--border2:rgba(200,168,75,0.4);
+  --text:#e8d5a3;--muted:#9ca3af;--dim:#6b7280;
+}
+body{background:var(--bg);color:var(--text);font-family:'Noto Serif JP',serif;min-height:100vh;overflow-x:hidden}
+body::before{content:'';position:fixed;inset:0;z-index:-1;
+  background:radial-gradient(ellipse 80% 50% at 50% -10%,rgba(200,168,75,0.06),transparent),
+  repeating-linear-gradient(0deg,transparent,transparent 39px,rgba(200,168,75,0.02) 40px),
+  repeating-linear-gradient(90deg,transparent,transparent 39px,rgba(200,168,75,0.02) 40px);}
+
+/* サイトヘッダー */
+.site-header{position:fixed;top:0;left:0;right:0;z-index:100;height:50px;
+  display:flex;align-items:center;justify-content:space-between;
+  padding:0 clamp(1rem,4vw,2rem);
+  background:rgba(10,10,14,0.92);backdrop-filter:blur(12px);
+  border-bottom:1px solid var(--border);}
+.site-logo{font-size:13px;font-weight:700;color:var(--gold-l);letter-spacing:3px;text-decoration:none;}
+.site-nav{display:flex;gap:6px;}
+.site-nav a{color:var(--muted);font-size:11px;text-decoration:none;padding:5px 10px;border-radius:6px;border:1px solid transparent;transition:all .2s;}
+.site-nav a:hover{color:var(--gold-l);border-color:var(--border);}
+
+/* 画面 */
+.screen{display:none;min-height:100vh;padding:60px clamp(.8rem,4vw,2rem) 40px;align-items:center;justify-content:center;flex-direction:column;}
+.screen.active{display:flex;}
+.card{background:var(--bg2);border:1px solid var(--border);border-radius:16px;padding:clamp(18px,4vw,32px);width:100%;max-width:520px;}
+.card-wide{max-width:760px;}
+.title{font-size:clamp(18px,4vw,28px);font-weight:700;color:var(--gold-l);letter-spacing:3px;text-align:center;margin-bottom:6px;}
+.sub{font-size:12px;color:var(--muted);text-align:center;margin-bottom:16px;}
+.scroll-list{min-height:100px;max-height:55vh;overflow-y:auto;display:flex;flex-direction:column;gap:6px;padding-right:4px;}
+.scroll-list::-webkit-scrollbar{width:4px;}
+.scroll-list::-webkit-scrollbar-track{background:transparent;}
+.scroll-list::-webkit-scrollbar-thumb{background:var(--gold-d);border-radius:2px;}
+.kifu-item{background:var(--bg2);border:1px solid var(--border);border-radius:10px;padding:12px 14px;cursor:pointer;transition:all .2s;}
+.kifu-item:hover{background:var(--bg3);border-color:var(--border2);}
+.btn{background:linear-gradient(135deg,var(--gold-d),var(--gold));color:#0a0a0f;font-family:inherit;font-size:13px;font-weight:700;letter-spacing:2px;padding:11px 24px;border-radius:8px;border:none;cursor:pointer;transition:opacity .2s,transform .2s;box-shadow:0 4px 20px rgba(200,168,75,.2);}
+.btn:hover{opacity:.9;transform:translateY(-1px);}
+.btn-ghost{background:transparent;color:var(--text);font-family:inherit;font-size:13px;padding:10px 20px;border-radius:8px;border:1px solid var(--border);cursor:pointer;transition:all .2s;}
+.btn-ghost:hover{background:rgba(200,168,75,.08);border-color:var(--border2);}
+.row{display:flex;gap:10px;flex-wrap:wrap;}
+.progress-bar{height:4px;background:rgba(255,255,255,.08);border-radius:2px;overflow:hidden;margin-bottom:4px;}
+.progress-fill{height:100%;background:linear-gradient(90deg,var(--gold-d),var(--gold-l));border-radius:2px;transition:width .3s;}
+.badge-sente{background:#111;color:#eee;padding:2px 10px;border-radius:10px;font-size:11px;font-weight:700;border:1px solid #444;}
+.badge-gote{background:#e8e8e8;color:#111;padding:2px 10px;border-radius:10px;font-size:11px;font-weight:700;border:1px solid #aaa;}
+.filter-active{background:linear-gradient(135deg,var(--gold-d),var(--gold))!important;border-color:transparent!important;color:#0a0a0f!important;font-weight:700!important;}
+.score-item{background:var(--bg2);border-radius:10px;padding:12px 14px;display:flex;justify-content:space-between;align-items:center;}
+input[type=text]{background:rgba(255,255,255,.06);border:1px solid var(--border);border-radius:8px;color:var(--text);font-family:inherit;font-size:14px;padding:10px 14px;width:100%;outline:none;transition:border-color .2s;}
+input[type=text]:focus{border-color:var(--border2);}
+.hint-badge{display:inline-flex;align-items:center;justify-content:center;width:26px;height:26px;border-radius:50%;font-weight:700;font-size:13px;cursor:pointer;}
+
+/* 将棋盤 */
+.board-wrap{display:flex;flex-direction:column;align-items:center;gap:8px;}
+canvas#study-board,canvas#quiz-board{border-radius:4px;cursor:default;max-width:100%;}
+@keyframes pulse{0%,100%{box-shadow:0 0 0 0 rgba(232,201,100,0)}50%{box-shadow:0 0 10px 3px rgba(232,201,100,.3)}}
+@keyframes fadeUp{to{opacity:1;transform:translateY(0)}}
+
+/* 持ち駒エリア */
+.mochigoma{background:rgba(200,168,75,.06);border:1px solid var(--border);border-radius:8px;padding:8px 12px;font-size:12px;color:var(--muted);min-height:36px;width:100%;text-align:center;}
+.mochigoma span{color:var(--gold-l);font-weight:700;}
+
+/* フィードバック */
+.feedback-overlay{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;border-radius:4px;background:rgba(0,0,0,.5);opacity:0;pointer-events:none;transition:opacity .2s;z-index:10;}
+.feedback-overlay.show{opacity:1;}
+.feedback-text{font-size:clamp(24px,6vw,40px);font-weight:900;letter-spacing:2px;}
+.board-container{position:relative;}
+</style>
+</head>
+<body>
+
+<!-- サイトヘッダー -->
+<header class="site-header">
+  <a class="site-logo" href="https://pecpec37-gift.github.io/portal/" target="_blank">🎮 とみやんのゲームランド</a>
+  <nav class="site-nav">
+    <a href="shogi.html" style="color:var(--gold-l);border-color:var(--border)">将棋</a>
+  </nav>
+</header>
+
+<!-- トップ画面 -->
+<div class="screen active" id="s-top">
+  <div class="card card-wide" style="max-height:90vh;display:flex;flex-direction:column;">
+    <div style="text-align:center;margin-bottom:12px;flex-shrink:0">
+      <div style="font-size:36px;margin-bottom:4px">♟️</div>
+      <div class="title">将棋棋譜記憶力ゲーム</div>
+      <div class="sub">棋譜を選択 → 記憶 → 再現 → 採点　全20局収録</div>
+      <div id="challenge-count" style="margin-top:4px;font-size:12px;color:var(--muted)"></div>
+    </div>
+    <div class="scroll-list" id="top-kifu-list" style="flex:1;min-height:0;"></div>
+    <div style="margin-top:12px;text-align:center;flex-shrink:0">
+      <button class="btn-ghost" onclick="showScreen('s-scores')">🏆 スコア一覧</button>
+    </div>
+  </div>
+</div>
+
+<!-- 名前入力 -->
+<div class="screen" id="s-name">
+  <div class="card">
+    <div class="title" style="font-size:20px">プレーヤー名を入力</div>
+    <div class="sub">スコアランキングに使用します</div>
+    <input type="text" id="name-input" placeholder="例：山田太郎" maxlength="20" onkeydown="if(event.key==='Enter')confirmName()">
+    <div style="margin-top:12px;text-align:center">
+      <button class="btn" onclick="confirmName()">次へ</button>
+    </div>
+  </div>
+</div>
+
+<!-- 学習画面 -->
+<div class="screen" id="s-study">
+  <div class="card card-wide">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;flex-wrap:wrap;gap:8px">
+      <div class="title" style="font-size:16px;margin:0" id="study-title">棋譜記憶</div>
+      <div style="font-family:monospace;font-size:14px;color:var(--gold-l)" id="study-timer">3:00</div>
+    </div>
+    <div id="study-move-info" style="color:var(--gold-l);font-size:14px;font-weight:700;margin-bottom:8px;padding:8px 14px;background:rgba(232,201,100,.1);border:1px solid rgba(232,201,100,.35);border-radius:8px;letter-spacing:1px;animation:pulse 2s ease-in-out infinite;text-align:center">👉 「次 ▶」ボタンを押して棋譜を記憶してください</div>
+    <div class="progress-bar"><div class="progress-fill" id="study-progress" style="width:0%"></div></div>
+    <div id="study-move-label" style="font-size:12px;color:var(--text);min-height:18px;text-align:center;margin-bottom:8px"></div>
+    <div id="study-mochi-gote" class="mochigoma" style="margin-bottom:6px">後手の持ち駒：なし</div>
+    <div class="board-wrap">
+      <canvas id="study-board" width="400" height="440"></canvas>
+    </div>
+    <div id="study-mochi-sente" class="mochigoma" style="margin-top:6px">先手の持ち駒：なし</div>
+    <div class="row" style="justify-content:center;margin-top:12px;flex-wrap:wrap;gap:6px">
+      <button class="btn-ghost" onclick="studyPrev5()" style="font-size:11px;padding:8px 12px">5手◀◀ 前</button>
+      <button class="btn-ghost" onclick="studyPrev()" id="btn-prev">◀ 前</button>
+      <button class="btn-ghost" onclick="studyNext()" id="btn-next" style="border-color:rgba(232,201,100,.6);color:var(--gold-l);font-weight:700">次 ▶</button>
+      <button class="btn-ghost" onclick="studyNext5()" style="font-size:11px;padding:8px 12px">次 ▶▶ 5手</button>
+      <button class="btn" onclick="startQuiz()">記憶完了 → クイズへ</button>
+    </div>
+  </div>
+</div>
+
+<!-- クイズ画面 -->
+<div class="screen" id="s-quiz">
+  <div class="card card-wide">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;flex-wrap:wrap;gap:8px">
+      <div id="quiz-move-label" style="font-size:13px;color:var(--text)">第1問</div>
+      <div style="display:flex;gap:14px;align-items:center">
+        <div style="font-size:13px;color:var(--gold-l);font-weight:700">スコア: <span id="quiz-score-display">0</span></div>
+        <div style="font-family:monospace;font-size:14px;color:var(--gold-l)" id="quiz-timer">3:00</div>
+      </div>
+    </div>
+    <div id="quiz-instruction" style="text-align:center;margin-bottom:6px;color:var(--dim);font-size:11px">動かす駒をクリック → 移動先をクリック</div>
+    <div id="quiz-mochi-gote" class="mochigoma" style="margin-bottom:6px">後手の持ち駒：なし</div>
+    <div class="board-container">
+      <canvas id="quiz-board" width="400" height="440"></canvas>
+      <div class="feedback-overlay" id="feedback-overlay">
+        <div class="feedback-text" id="feedback-text"></div>
+      </div>
+    </div>
+    <div id="quiz-mochi-sente" class="mochigoma" style="margin-top:6px">先手の持ち駒：なし</div>
+    <div class="row" style="justify-content:center;margin-top:10px">
+      <button class="btn-ghost" onclick="abortQuiz()" style="font-size:12px">終了して採点</button>
+    </div>
+  </div>
+</div>
+
+<!-- 結果画面 -->
+<div class="screen" id="s-result">
+  <div class="card" style="max-width:460px;text-align:center">
+    <div style="font-size:56px;margin-bottom:8px" id="result-trophy">🏆</div>
+    <div id="result-score" style="font-size:48px;font-weight:900;color:var(--gold-l);font-family:monospace;margin-bottom:8px"></div>
+    <div id="result-player" style="font-size:16px;font-weight:700;color:var(--text);margin-bottom:4px"></div>
+    <div id="result-kifu" style="font-size:12px;color:var(--muted);margin-bottom:4px"></div>
+    <div id="result-answered" style="font-size:12px;color:var(--muted);margin-bottom:16px"></div>
+    <div id="result-perfect" style="display:none;background:rgba(232,201,100,.12);border:1px solid var(--border2);border-radius:8px;padding:10px;margin-bottom:14px;color:var(--gold-l);font-size:13px;font-weight:700">🎉 パーフェクト！満点達成！</div>
+    <div class="row" style="justify-content:center">
+      <button class="btn" onclick="playAgain()">もう一度</button>
+      <button class="btn-ghost" onclick="showScreen('s-scores')">🏆 スコア一覧</button>
+    </div>
+  </div>
+</div>
+
+<!-- スコア一覧 -->
+<div class="screen" id="s-scores">
+  <div class="card card-wide">
+    <div class="title">🏆 スコアランキング</div>
+    <div class="sub">上位100件</div>
+    <div class="scroll-list" id="scores-list"></div>
+    <div class="row" style="justify-content:center;margin-top:14px">
+      <button class="btn" onclick="showScreen('s-top')">棋譜を選ぶ</button>
+    </div>
+  </div>
+</div>
+
+<script>
+// ===== 棋譜データ =====
+const KIFU_DATA = [
+  { id:"shogi01", title:"矢倉 藤井聡太 名人 vs 糸谷哲郎 九段", sente:"藤井聡太 名人", gote:"糸谷哲郎 九段", kisen:"名人戦", sentype:"矢倉", moves:["２六歩(27)","８四歩(83)","２五歩(26)","８五歩(84)","７六歩(77)","３二金(41)","７七角(88)","３四歩(33)","６八銀(79)","４二銀(31)","２四歩(25)","同　歩(23)","同　飛(28)","３三銀(42)","２八飛(24)","２三歩打","７八金(69)","６二銀(71)","４八銀(39)","５四歩(53)","６六歩(67)","３一角(22)","６七銀(68)","７四歩(73)","３六歩(37)","７三銀(62)","５六歩(57)","４一玉(51)","３七桂(29)","７五歩(74)","同　歩(76)","同　角(31)","４六歩(47)","７四銀(73)","６八角(77)","４四歩(43)","４七銀(48)","５二金(61)","４八金(49)","４三金(52)","２九飛(28)","６四歩(63)","５八玉(59)","８四角(75)","５七角(68)","３一玉(41)","１六歩(17)","１四歩(13)","４五歩(46)","同　歩(44)"] },
+  { id:"shogi02", title:"四間飛車 谷川浩司 十七世名人 vs 久保利明 九段", sente:"谷川浩司 十七世名人", gote:"久保利明 九段", kisen:"その他の棋戦", sentype:"四間飛車", moves:["７六歩(77)","３四歩(33)","２六歩(27)","４四歩(43)","４八銀(39)","３二銀(31)","５八金(49)","４二飛(82)","６八玉(59)","６二玉(51)","７八玉(68)","７二玉(62)","５六歩(57)","４三銀(32)","５七銀(48)","８二玉(72)","７七角(88)","９二香(91)","８八玉(78)","９一玉(82)","９六歩(97)","９四歩(93)","７八銀(79)","８二銀(71)","８六歩(87)","５二金(41)","８七銀(78)","６四歩(63)","７八金(69)","７四歩(73)","６六歩(67)","６三金(52)","６七金(58)","７一金(61)","２五歩(26)","３三角(22)","３六歩(37)","５四歩(53)","５九角(77)","４五歩(44)","２六角(59)","４四銀(43)","７七桂(89)","５五歩(54)","同　歩(56)","同　銀(44)","８五歩(86)","７二金(71)","３七桂(29)","４六歩(45)"] },
+  { id:"shogi03", title:"四間飛車 藤井聡太 竜王・名人 vs 山崎隆之 九段", sente:"藤井聡太 竜王・名人", gote:"山崎隆之 九段", kisen:"叡王戦", sentype:"四間飛車", moves:["２六歩(27)","３四歩(33)","７六歩(77)","４四歩(43)","２五歩(26)","３三角(22)","４八銀(39)","９四歩(93)","６八玉(59)","３二銀(31)","５八金(49)","９五歩(94)","７八玉(68)","４二飛(82)","５六歩(57)","６二玉(51)","７七角(88)","４三銀(32)","８八玉(78)","７二銀(71)","９八香(99)","８四歩(83)","５七銀(48)","８三銀(72)","９九玉(88)","７四銀(83)","６六歩(67)","３二金(41)","６七金(58)","４一飛(42)","８八銀(79)","５四歩(53)","６五歩(66)","同　歩(64)","６六銀(57)","同　銀(65)","同　角(68)","７二金(61)","８四角(66)","４二角(33)","６六角(84)","９三桂(81)","７五歩(76)","８一飛(41)","７八金(69)","６四歩(63)","５七角(66)","５二玉(62)","４六歩(47)","３三桂(21)"] },
+  { id:"shogi04", title:"四間飛車 谷川浩司 十七世名人 vs 冨田誠也 五段", sente:"谷川浩司 十七世名人", gote:"冨田誠也 五段", kisen:"王将戦", sentype:"四間飛車", moves:["７六歩(77)","３四歩(33)","２六歩(27)","４四歩(43)","４八銀(39)","９四歩(93)","９六歩(97)","３二銀(31)","５六歩(57)","４三銀(32)","５八金(49)","３三角(22)","３六歩(37)","４二飛(82)","６八玉(59)","６二玉(51)","７八玉(68)","７二銀(71)","２五歩(26)","７一玉(62)","４六歩(47)","８二玉(71)","３七桂(29)","３二金(41)","１六歩(17)","５四銀(43)","６六歩(67)","６四歩(63)","６七金(58)","４三金(32)","６八銀(79)","３二飛(42)","４七銀(48)","１二香(11)","７七銀(68)","５一角(33)","７九角(88)","３五歩(34)","同　歩(36)","同　飛(32)","３六歩打","３四飛(35)","８八玉(78)","７四歩(73)","７八金(69)","６三銀(54)","５五歩(56)","３二飛(34)","４五歩(46)","同　歩(44)"] },
+  { id:"shogi05", title:"三間飛車 久保利明 九段 vs 池永天志 六段", sente:"久保利明 九段", gote:"池永天志 六段", kisen:"竜王戦", sentype:"三間飛車", moves:["７六歩(77)","８四歩(83)","１六歩(17)","１四歩(13)","７八飛(28)","８五歩(84)","７七角(88)","３四歩(33)","６六歩(67)","６二銀(71)","６八銀(79)","４二玉(51)","４八玉(59)","３二玉(42)","３八銀(39)","５二金(61)","５八金(69)","７四歩(73)","３九玉(48)","６四歩(63)","２八玉(39)","５四歩(53)","５六歩(57)","４二金(41)","８八飛(78)","９四歩(93)","５七銀(68)","７五歩(74)","同　歩(76)","７二飛(82)","６七金(58)","７三銀(62)","８六歩(87)","８四銀(73)","８五歩(86)","７五銀(84)","８四歩(85)","８六歩打","８三歩成(84)","７四飛(72)","６八金(67)","９三桂(81)","同　歩成(83)","８四飛(74)","６五歩(66)","７七角成(22)","同　桂(89)","８七歩成(86)","８五歩打","７七と(87)"] },
+  { id:"shogi06", title:"三間飛車 中井広恵 女流六段 vs 室谷由紀 女流三段", sente:"中井広恵 女流六段", gote:"室谷由紀 女流三段", kisen:"王座戦", sentype:"三間飛車", moves:["２六歩(27)","３四歩(33)","２五歩(26)","３三角(22)","７六歩(77)","４四歩(43)","４八銀(39)","９四歩(93)","９六歩(97)","３二飛(82)","６八玉(59)","４二銀(31)","７八玉(68)","６二玉(51)","５六歩(57)","５二金(41)","５七銀(48)","７二銀(71)","８六歩(87)","４三銀(42)","８七玉(78)","６四歩(63)","７八銀(79)","７四歩(73)","３六歩(37)","７一玉(62)","６六歩(67)","８四歩(83)","５八金(49)","６三金(52)","６七金(58)","５四歩(53)","７九角(88)","５一角(33)","４六銀(57)","８二玉(71)","７七桂(89)","７三桂(81)","８八玉(87)","１四歩(13)","１六歩(17)","８三玉(82)","８七銀(78)","４五歩(44)","３七銀(46)","２二飛(32)","７八金(69)","４四銀(43)","４六歩(47)","同　歩(45)"] },
+  { id:"shogi07", title:"ゴキゲン中飛車 久保利明 九段 vs 谷川浩司 十七世名人", sente:"久保利明 九段", gote:"谷川浩司 十七世名人", kisen:"順位戦", sentype:"ゴキゲン中飛車", moves:["７六歩(77)","８四歩(83)","１六歩(17)","１四歩(13)","５六歩(57)","６二銀(71)","５五歩(56)","８五歩(84)","７七角(88)","４二玉(51)","６八銀(79)","３二玉(42)","５八飛(28)","４二銀(31)","４八玉(59)","７四歩(73)","３八玉(48)","７三銀(62)","５七銀(68)","６四銀(73)","６六銀(57)","５二金(61)","２八玉(38)","３四歩(33)","４六歩(47)","４四歩(43)","３八金(49)","４三銀(42)","１八香(19)","３三角(22)","１九玉(28)","９四歩(93)","２八銀(39)","５一角(33)","９六歩(97)","８四角(51)","５九飛(58)","４二金(52)","５八金(69)","３三金(42)","４七金(58)","７三桂(81)","６八角(77)","２二玉(32)","３六歩(37)","３二金(41)","２六歩(27)","２四歩(23)","２七銀(28)","２三金(33)"] },
+  { id:"shogi08", title:"ゴキゲン中飛車 菅井竜也 八段 vs 藤井聡太 竜王・名人", sente:"菅井竜也 八段", gote:"藤井聡太 竜王・名人", kisen:"朝日杯将棋オープン戦", sentype:"ゴキゲン中飛車", moves:["５六歩(57)","８四歩(83)","７六歩(77)","６二銀(71)","５五歩(56)","４二玉(51)","５八飛(28)","３二玉(42)","４八玉(59)","７四歩(73)","６八銀(79)","７三銀(62)","５七銀(68)","６四銀(73)","６六銀(57)","１四歩(13)","３八玉(48)","１五歩(14)","２八玉(38)","３四歩(33)","４六歩(47)","５二金(61)","３八金(49)","４二銀(31)","３六歩(37)","７三桂(81)","４八銀(39)","９四歩(93)","７七角(88)","８五歩(84)","６八角(77)","３三角(22)","５九金(69)","２二玉(32)","３七銀(48)","３二金(41)","１八香(19)","４四歩(43)","１九玉(28)","４三銀(42)","４九金(59)","４二金(52)","３九金(49)","５二飛(82)","２八銀(37)","５四歩(53)","同　歩(55)","同　銀(42)","同　銀(57)","同　飛(52)"] },
+  { id:"shogi09", title:"ゴキゲン中飛車 佐藤康光 九段 vs 戸辺 誠 七段", sente:"佐藤康光 九段", gote:"戸辺 誠 七段", kisen:"王座戦", sentype:"ゴキゲン中飛車", moves:["７六歩(77)","３四歩(33)","２六歩(27)","５四歩(53)","２五歩(26)","５二飛(82)","４八銀(39)","５五歩(54)","６八玉(59)","３三角(22)","３六歩(37)","４二銀(31)","３七銀(48)","５三銀(42)","４六銀(37)","４四銀(53)","７八玉(68)","６二玉(51)","９六歩(97)","７二玉(62)","９五歩(96)","５六歩(55)","６八銀(79)","５七歩成(56)","同　銀(66)","４五銀(44)","６六銀(57)","４六銀(45)","同　歩(47)","５七銀打","６八銀打","６六銀成(57)","同　金(67)","５六歩打","５八歩打","５七銀打","２四歩(25)","同　歩(23)","３五歩(36)","６八銀成(57)","同　玉(78)","５七銀打","６七金(68)","４六銀成(57)","３四歩(35)","５五角(33)","２四飛(28)","２二歩打","２五飛(24)","８二玉(72)"] },
+  { id:"shogi10", title:"中飛車 深浦康市 九段 vs 戸辺 誠 七段", sente:"深浦康市 九段", gote:"戸辺　誠 七段", kisen:"順位戦", sentype:"中飛車", moves:["２六歩(27)","３四歩(33)","２五歩(26)","３三角(22)","７六歩(77)","４二銀(31)","６八玉(59)","９四歩(93)","９六歩(97)","４四歩(43)","４八銀(39)","５二飛(82)","７八玉(68)","６二玉(51)","５六歩(57)","７二玉(62)","５七銀(48)","８二玉(72)","５八金(49)","５四歩(53)","７七角(88)","５三銀(42)","８八玉(78)","６四銀(53)","６六銀(57)","９二香(91)","９八香(99)","９一玉(82)","９九玉(88)","８二銀(71)","８八銀(79)","７一金(61)","６八金(58)","５一金(41)","３六歩(37)","４五歩(44)","２四歩(25)","同　歩(23)","７五銀(66)","同　銀(64)","同　角(77)","５五歩(54)","４三銀打","５三飛(52)","３四銀成(43)","５六歩(55)","３三成銀(34)","５七歩成(56)","７八金(68)","３三桂(21)"] },
+  { id:"shogi11", title:"ゴキゲン中飛車 阿部光瑠 七段 vs 羽生善治 九段", sente:"阿部光瑠 七段", gote:"羽生善治 九段", kisen:"王位戦", sentype:"ゴキゲン中飛車", moves:["５六歩(57)","８四歩(83)","７六歩(77)","６二銀(71)","５五歩(56)","８五歩(84)","７七角(88)","７四歩(73)","５八飛(28)","４二玉(51)","６八銀(79)","７三銀(62)","５七銀(68)","６四銀(73)","６六銀(57)","１四歩(13)","４八玉(59)","５二金(61)","３八玉(48)","１五歩(14)","２八玉(38)","３二玉(42)","３八銀(39)","４二銀(31)","４六歩(47)","９四歩(93)","５九飛(58)","３四歩(33)","５八金(69)","４四歩(43)","３六歩(37)","４三銀(42)","４七金(58)","３三角(22)","９六歩(97)","５一角(33)","２六歩(27)","８四角(51)","３七桂(29)","７三桂(81)","６八角(77)","２二玉(32)","２七銀(38)","６六角(84)","同　角(68)","６七銀打","５七角(66)","８六歩(85)","同　歩(87)","同　角(57)"] },
+  { id:"shogi12", title:"矢倉 佐藤天彦 九段 vs 藤井聡太 竜王", sente:"佐藤天彦 九段", gote:"藤井聡太 竜王", kisen:"順位戦", sentype:"矢倉", moves:["７六歩(77)","８四歩(83)","６八銀(79)","３四歩(33)","７七銀(68)","７四歩(73)","２六歩(27)","６二銀(71)","２五歩(26)","３二金(41)","７八金(69)","６四歩(63)","４八銀(39)","７三桂(81)","７九角(88)","８五歩(84)","６八角(79)","４二銀(31)","３六歩(37)","５二金(61)","６九玉(59)","５四歩(53)","５六歩(57)","４一玉(51)","７九玉(69)","６三金(52)","３七銀(48)","６五桂(73)","６六銀(77)","７五歩(74)","同　歩(76)","７三銀(62)","２四歩(25)","同　歩(23)","同　飛(28)","２三歩打","４六角(24)","８六歩(85)","同　歩(87)","同　飛(82)","８八歩打","８一飛(86)","６九玉(79)","８四銀(73)","５九玉(69)","８五銀(84)","６五銀(66)","同　銀(54)","１五桂打","１二銀打"] },
+  { id:"shogi13", title:"矢倉 渡辺明 名人 vs 藤井聡太 竜王", sente:"渡辺　明 名人", gote:"藤井聡太 竜王", kisen:"名人戦", sentype:"矢倉", moves:["７六歩(77)","８四歩(83)","２六歩(27)","３二金(41)","７八金(69)","８五歩(84)","７七角(88)","３四歩(33)","８八銀(79)","４四歩(43)","２五歩(26)","３三角(22)","６九玉(59)","４二銀(31)","５八金(49)","４三銀(42)","３八銀(39)","５二金(61)","３六歩(37)","６二銀(71)","５九角(77)","６四歩(63)","４六歩(47)","７四歩(73)","４七銀(38)","７三桂(81)","５六銀(47)","６三銀(62)","６六歩(67)","４二玉(51)","７九玉(69)","１四歩(13)","１六歩(17)","５四銀(63)","６七金(58)","９四歩(93)","９六歩(97)","３一玉(42)","７七桂(89)","６二飛(82)","８九玉(79)","６一飛(62)","２六角(59)","６五歩(64)","同　歩(66)","同　桂(73)","同　銀(56)","同　銀(62)","同　金(67)","同　飛(61)"] },
+  { id:"shogi14", title:"矢倉 渡辺明 九段 vs 藤井聡太 王位", sente:"渡辺　明 九段", gote:"藤井聡太 王位", kisen:"王位戦", sentype:"矢倉", moves:["７六歩(77)","８四歩(83)","６八銀(79)","３四歩(33)","７七銀(68)","７四歩(73)","２六歩(27)","７二銀(71)","２五歩(26)","３二金(41)","５六歩(57)","６四歩(63)","７九角(88)","６三銀(72)","２四歩(25)","同　歩(23)","同　飛(28)","４一玉(51)","４六角(24)","２三歩打","７八金(69)","４二銀(31)","４八銀(39)","７三桂(81)","３六歩(37)","５四歩(53)","６九玉(59)","５二飛(82)","３七桂(29)","６二金(61)","５八金(49)","５三銀(42)","７九玉(69)","４四銀(53)","６八金(58)","１四歩(13)","５七角(46)","５五歩(54)","同　角(57)","同　銀(44)","８八玉(79)","５六歩打","８四角(55)","５一飛(52)","５九銀(48)","８一飛(51)","４八角(84)","６五桂(73)","５八銀(59)","７七桂成(65)"] },
+  { id:"shogi15", title:"矢倉 服部慎一郎 六段 vs 藤井聡太 竜王・名人", sente:"服部慎一郎 六段", gote:"藤井聡太 竜王・名人", kisen:"朝日杯将棋オープン戦", sentype:"矢倉", moves:["７六歩(77)","８四歩(83)","６八銀(79)","３四歩(33)","７七銀(68)","７四歩(73)","２六歩(27)","７二銀(71)","２五歩(26)","３二金(41)","７八金(69)","６四歩(63)","４八銀(39)","７三桂(81)","７九角(88)","４二銀(31)","３六歩(37)","６三銀(72)","６九玉(59)","８五歩(84)","６八角(79)","６二金(61)","５六歩(57)","８一飛(82)","３七銀(48)","５二玉(51)","５八金(49)","５四銀(63)","４六銀(37)","４四歩(43)","３七桂(29)","４三銀(42)","５五歩(56)","６三銀(54)","６六歩(67)","３三桂(21)","６七金(58)","４五桂(33)","５九角(68)","１四歩(13)","９六歩(97)","５四歩(53)","同　歩(55)","同　銀(42)","５五歩打","３七桂成(45)","同　銀(48)","４五銀(54)","同　銀(46)","同　飛(29)"] },
+  { id:"shogi16", title:"矢倉 増田康宏 八段 vs 藤井聡太 棋王", sente:"増田康宏 八段", gote:"藤井聡太 棋王", kisen:"棋王戦", sentype:"矢倉", moves:["２六歩(27)","８四歩(83)","７六歩(77)","３二金(41)","７八金(69)","８五歩(84)","７七角(88)","３四歩(33)","８八銀(79)","４四歩(43)","２五歩(26)","３三角(22)","４八銀(39)","４二銀(31)","６九玉(59)","４三銀(42)","３六歩(37)","５二金(61)","５八金(49)","６二銀(71)","５六歩(57)","７四歩(73)","６八角(77)","５四歩(53)","７七銀(88)","４一玉(51)","３七銀(48)","７三桂(81)","７九玉(69)","９四歩(93)","９六歩(97)","４二角(33)","６六歩(67)","６四歩(63)","６七金(58)","６三銀(62)","３五歩(36)","同　歩(34)","同　銀(37)","８一飛(82)","３六銀(35)","６五歩(64)","４六角(35)","６六歩(65)","同　金(67)","６五歩打","７七銀(66)","６二金(52)","３五銀(36)","５二玉(41)"] },
+  { id:"shogi17", title:"矢倉 永瀬拓矢 九段 vs 藤井聡太 王位", sente:"永瀬拓矢 九段", gote:"藤井聡太 王位", kisen:"王位戦", sentype:"矢倉", moves:["７六歩(77)","３四歩(33)","２六歩(27)","４四歩(43)","２五歩(26)","３三角(22)","４八銀(39)","３二銀(31)","５六歩(57)","４三銀(32)","３六歩(37)","８四歩(83)","７八銀(79)","３二金(41)","７九角(88)","６二銀(71)","７七銀(78)","７四歩(73)","７八金(69)","８五歩(84)","３五歩(36)","同　歩(34)","同　飛(28)","７三桂(81)","６八角(35)","５四歩(53)","６九玉(59)","６四歩(63)","５八金(49)","５二金(61)","６六歩(67)","４一玉(51)","６七金(58)","６三銀(62)","７九玉(69)","８一飛(82)","３七銀(48)","８六歩(85)","同　歩(87)","４二角(33)","４六銀(37)","３四歩打","９六歩(97)","９四歩(93)","８八銀(77)","６五歩(64)","同　歩(66)","７五歩(74)","５七銀(46)","７六歩(75)"] },
+  { id:"shogi18", title:"矢倉 藤井聡太 王座 vs 伊藤匠 叡王", sente:"藤井聡太 王座", gote:"伊藤　匠 叡王", kisen:"王座戦", sentype:"矢倉", moves:["２六歩(27)","８四歩(83)","２五歩(26)","８五歩(84)","７六歩(77)","３二金(41)","７七角(88)","３四歩(33)","６八銀(79)","４四角(22)","７八金(69)","２二銀(31)","４八銀(39)","３三銀(22)","４六歩(47)","１四歩(13)","１六歩(17)","６二銀(71)","４七銀(48)","５二金(61)","６六歩(67)","５四歩(53)","３六歩(37)","７四歩(73)","３七桂(29)","４一玉(51)","６七銀(68)","６四歩(63)","９六歩(97)","６三銀(62)","５六歩(57)","３一玉(41)","２九飛(28)","７二飛(82)","５八金(49)","９四歩(93)","６九玉(59)","４二金(52)","６八角(77)","７五歩(74)","同　歩(76)","同　飛(72)","４五歩(46)","６二角(44)","４六角(68)","７四飛(75)","７六歩打","８四飛(74)","６八玉(69)","８六歩(85)"] },
+  { id:"shogi19", title:"矢倉 斎藤慎太郎 八段 vs 藤井聡太 竜王・名人", sente:"斎藤慎太郎 八段", gote:"藤井聡太 竜王・名人", kisen:"朝日杯将棋オープン戦", sentype:"矢倉", moves:["７六歩(77)","８四歩(83)","６八銀(79)","３四歩(33)","７七銀(68)","７四歩(73)","２六歩(27)","７二銀(71)","２五歩(26)","３二金(41)","７八金(69)","６四歩(63)","２四歩(25)","同　歩(23)","同　飛(28)","８五歩(84)","１六歩(17)","６三銀(72)","２八飛(24)","２三歩打","１五歩(16)","７三桂(81)","５八金(49)","６二金(61)","４八銀(39)","４二銀(31)","９六歩(97)","５四歩(53)","４六歩(47)","６五歩(64)","４七銀(48)","４四歩(43)","６六歩(67)","同　歩(65)","同　金(67)","８六歩(85)","同　歩(87)","同　飛(82)","８七歩打","８一飛(86)","６五歩打","４三銀(42)","７五歩(76)","３一角(22)","９七角(88)","４一玉(51)","４八玉(59)","７五歩(74)","同　飛(86)","８五桂(73)"] },
+  { id:"shogi20", title:"矢倉 増田康宏 八段 vs 藤井聡太 棋王 第51期", sente:"増田康宏 八段", gote:"藤井聡太 棋王", kisen:"棋王戦", sentype:"矢倉", moves:["７六歩(77)","８四歩(83)","６八銀(79)","３四歩(33)","７七銀(68)","７四歩(73)","２六歩(27)","７二銀(71)","２五歩(26)","３二金(41)","７八金(69)","６四歩(63)","２四歩(25)","同　歩(23)","同　飛(28)","８五歩(84)","３八銀(39)","７三桂(81)","３六歩(37)","５二玉(51)","３七桂(29)","６二金(61)","２九飛(24)","２三歩打","４八金(49)","１四歩(13)","１六歩(17)","６三銀(72)","４六歩(47)","４二銀(31)","４七銀(38)","５四歩(53)","９六歩(97)","９四歩(93)","４五歩(46)","６五歩(64)","５八玉(59)","５三銀(42)","３五歩(36)","同　歩(34)","２五飛(29)","８六歩(85)","同　歩(87)","８八角成(22)","同　銀(79)","８一飛(82)","７八金(88)","６四銀(63)","３五飛(25)","４二玉(52)"] },
+];
+
+// ===== 将棋盤定数 =====
+const SQ = 44; // マスのサイズ(px)
+const MARGIN_X = 20; // 左余白（段表示用）
+const MARGIN_Y = 24; // 上余白（筋表示用）
+const BD_W = SQ * 9 + MARGIN_X;
+const BD_H = SQ * 9 + MARGIN_Y;
+
+// 駒名マッピング（表示文字）
+const KOMA_DISP = {
+  '歩':'歩','香':'香','桂':'桂','銀':'銀','金':'金','角':'角','飛':'飛','玉':'玉','王':'玉',
+  '成銀':'全','成桂':'圭','成香':'杏','と':'と','馬':'馬','龍':'龍','竜':'龍',
+  '歩打':'歩','香打':'香','桂打':'桂','銀打':'銀','金打':'金','角打':'角','飛打':'飛',
+};
+
+// 初期配置
+function initialBoard() {
+  const b = {};
+  // 後手（上側）
+  const gote1 = ['香','桂','銀','金','玉','金','銀','桂','香'];
+  gote1.forEach((k,i) => b[`${i+1}-1`] = {koma:k, player:2});
+  b['2-2'] = {koma:'角', player:2};
+  b['8-2'] = {koma:'飛', player:2};
+  for(let i=1;i<=9;i++) b[`${i}-3`] = {koma:'歩', player:2};
+  // 先手（下側）
+  const sente9 = ['香','桂','銀','金','玉','金','銀','桂','香'];
+  sente9.forEach((k,i) => b[`${i+1}-9`] = {koma:k, player:1});
+  b['8-8'] = {koma:'角', player:1};
+  b['2-8'] = {koma:'飛', player:1};
+  for(let i=1;i<=9;i++) b[`${i}-7`] = {koma:'歩', player:1};
+  return b;
+}
+
+// KIF手順をパース（座標・駒名・成り・打ち）
+function parseKifMove(moveStr) {
+  // 「同　歩(23)」のような「同」への移動
+  const isSame = moveStr.startsWith('同');
+  // 座標変換（全角数字・漢数字）
+  const colMap = {'１':1,'２':2,'３':3,'４':4,'５':5,'６':6,'７':7,'８':8,'９':9};
+  const rowMap = {'一':1,'二':2,'三':3,'四':4,'五':5,'六':6,'七':7,'八':8,'九':9};
+
+  let toCol=0, toRow=0, fromCol=0, fromRow=0, komaName='', nari=false, uchi=false;
+
+  if(!isSame) {
+    const ch0 = moveStr[0], ch1 = moveStr[1];
+    toCol = colMap[ch0] || 0;
+    toRow = rowMap[ch1] || 0;
+    // 「２六歩(27)」→ 駒名抽出
+    const rest = moveStr.slice(2);
+    const parenMatch = rest.match(/\((\d)(\d)\)/);
+    if(parenMatch) {
+      fromCol = parseInt(parenMatch[1]);
+      fromRow = parseInt(parenMatch[2]);
+    }
+    if(rest.includes('打')) {
+      uchi = true;
+      komaName = rest.replace('打','').replace(/\(.*\)/,'').trim();
+    } else {
+      komaName = rest.replace('成','').replace(/\(.*\)/,'').trim();
+      nari = rest.includes('成') && !rest.includes('成銀') && !rest.includes('成桂') && !rest.includes('成香');
+    }
+  } else {
+    // 同の場合
+    const rest = moveStr.replace(/^同\s*/,'');
+    const parenMatch = rest.match(/\((\d)(\d)\)/);
+    if(parenMatch) {
+      fromCol = parseInt(parenMatch[1]);
+      fromRow = parseInt(parenMatch[2]);
+    }
+    if(rest.includes('打')) {
+      uchi = true;
+      komaName = rest.replace('打','').replace(/\(.*\)/,'').trim();
+    } else {
+      komaName = rest.replace('成','').replace(/\(.*\)/,'').trim();
+      nari = rest.includes('成') && !rest.includes('成銀') && !rest.includes('成桂') && !rest.includes('成香');
+    }
+  }
+  return {isSame, toCol, toRow, fromCol, fromRow, komaName, nari, uchi};
+}
+
+// 盤面を手数upToまで進める
+function buildBoard(kifu, upTo) {
+  let board = initialBoard();
+  let mochiSente = {};
+  let mochiGote  = {};
+  let prevTo = null;
+
+  for(let i=0; i<upTo && i<kifu.moves.length; i++) {
+    const raw = kifu.moves[i];
+    const player = (i%2===0) ? 1 : 2;
+    const m = parseKifMove(raw);
+
+    let toCol = m.toCol, toRow = m.toRow;
+    if(m.isSame && prevTo) { toCol = prevTo.col; toRow = prevTo.row; }
+
+    if(m.uchi) {
+      // 打ち駒：持ち駒から盤上へ
+      const mochi = player===1 ? mochiSente : mochiGote;
+      if(mochi[m.komaName]) {
+        mochi[m.komaName]--;
+        if(mochi[m.komaName]<=0) delete mochi[m.komaName];
+      }
+      board[`${toCol}-${toRow}`] = {koma:m.komaName, player};
+    } else {
+      const fromKey = `${m.fromCol}-${m.fromRow}`;
+      const toKey   = `${toCol}-${toRow}`;
+      const piece   = board[fromKey];
+      // 取った駒を持ち駒に
+      if(board[toKey]) {
+        const cap = board[toKey];
+        // 成り駒を元に戻す
+        const rawKoma = unPromote(cap.koma);
+        const mochi = player===1 ? mochiSente : mochiGote;
+        mochi[rawKoma] = (mochi[rawKoma]||0)+1;
+      }
+      // 移動
+      delete board[fromKey];
+      if(piece) {
+        const newKoma = m.nari ? promote(piece.koma) : piece.koma;
+        board[toKey] = {koma:newKoma, player};
+      }
+    }
+    prevTo = {col:toCol, row:toRow};
+  }
+  return {board, mochiSente, mochiGote, prevTo};
+}
+
+function promote(k) {
+  const map = {'歩':'と','香':'成香','桂':'成桂','銀':'成銀','角':'馬','飛':'龍'};
+  return map[k] || k;
+}
+function unPromote(k) {
+  const map = {'と':'歩','成香':'香','成桂':'桂','成銀':'銀','馬':'角','龍':'飛','竜':'飛'};
+  return map[k] || k;
+}
+
+// ===== 盤面描画 =====
+function drawBoard(canvasId, boardData, opts={}) {
+  const canvas = document.getElementById(canvasId);
+  if(!canvas) return;
+
+  // キャンバスサイズをウィンドウ幅に合わせる
+  const maxW = Math.min(window.innerWidth - 40, 440);
+  const sq = Math.floor((maxW - MARGIN_X) / 9);
+  const cw = sq*9 + MARGIN_X;
+  const ch = sq*9 + MARGIN_Y;
+  canvas.width = cw;
+  canvas.height = ch;
+
+  const ctx = canvas.getContext('2d');
+  ctx.clearRect(0,0,cw,ch);
+
+  // 盤の色
+  ctx.fillStyle = '#d4a955';
+  ctx.fillRect(MARGIN_X, MARGIN_Y, sq*9, sq*9);
+
+  // 格子線
+  ctx.strokeStyle = '#7a5230';
+  ctx.lineWidth = 1;
+  for(let i=0;i<=9;i++) {
+    ctx.beginPath(); ctx.moveTo(MARGIN_X+i*sq, MARGIN_Y); ctx.lineTo(MARGIN_X+i*sq, MARGIN_Y+sq*9); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(MARGIN_X, MARGIN_Y+i*sq); ctx.lineTo(MARGIN_X+sq*9, MARGIN_Y+i*sq); ctx.stroke();
+  }
+
+  // 筋・段ラベル
+  ctx.fillStyle = '#4a3020';
+  ctx.font = `${Math.max(10,sq*0.28)}px 'Noto Serif JP',serif`;
+  ctx.textAlign = 'center';
+  const cols = ['９','８','７','６','５','４','３','２','１'];
+  const rows = ['一','二','三','四','五','六','七','八','九'];
+  for(let i=0;i<9;i++) {
+    ctx.fillText(cols[i], MARGIN_X+(i+0.5)*sq, MARGIN_Y-6);
+    ctx.fillText(rows[i], MARGIN_X+sq*9+2, MARGIN_Y+(i+0.6)*sq);
+  }
+
+  // 星
+  const stars = [[3,3],[3,6],[6,3],[6,6],[3,0],[3,9],[0,3],[9,3],[0,0],[9,9],[0,9],[9,0]];
+  // 実際の将棋の星は3か所
+  [[3,3],[3,6],[6,3],[6,6]].forEach(([c,r])=>{
+    ctx.beginPath();
+    ctx.arc(MARGIN_X+c*sq, MARGIN_Y+r*sq, 3, 0, Math.PI*2);
+    ctx.fillStyle='#7a5230'; ctx.fill();
+  });
+
+  // 駒を描画
+  const {board, prevTo} = boardData;
+  ctx.textAlign='center';
+
+  // 駒選択ハイライト（変更2）
+  if(opts.selectedPiece) {
+    const sp = opts.selectedPiece;
+    const hx = MARGIN_X + (9-sp.col)*sq;
+    const hy = MARGIN_Y + (sp.row-1)*sq;
+    ctx.fillStyle='rgba(100,200,255,0.4)';
+    ctx.fillRect(hx,hy,sq,sq);
+  }
+
+  // 正解マス表示（不正解後）
+  if(opts.answerSquare) {
+    const as = opts.answerSquare;
+    const hx = MARGIN_X + (9-as.col)*sq;
+    const hy = MARGIN_Y + (as.row-1)*sq;
+    ctx.fillStyle='rgba(74,222,128,0.5)';
+    ctx.fillRect(hx,hy,sq,sq);
+    ctx.strokeStyle='#4ade80';
+    ctx.lineWidth=2;
+    ctx.strokeRect(hx+1,hy+1,sq-2,sq-2);
+  }
+  // ハイライト（最後に動いた升）
+  if(opts.lastMove && prevTo) {
+    ctx.fillStyle='rgba(255,255,100,0.35)';
+    const hx = MARGIN_X + (9-prevTo.col)*sq;
+    const hy = MARGIN_Y + (prevTo.row-1)*sq;
+    ctx.fillRect(hx,hy,sq,sq);
+  }
+
+  // ヒントマス
+  if(opts.hints) {
+    opts.hints.forEach((h,idx)=>{
+      const colors = ['rgba(59,130,246,0.45)','rgba(245,158,11,0.45)','rgba(16,185,129,0.45)'];
+      const labels = ['A','B','C'];
+      const hx = MARGIN_X + (9-h.col)*sq;
+      const hy = MARGIN_Y + (h.row-1)*sq;
+      ctx.fillStyle = colors[idx]||colors[0];
+      ctx.fillRect(hx,hy,sq,sq);
+      ctx.fillStyle = '#fff';
+      ctx.font = `bold ${sq*0.45}px sans-serif`;
+      ctx.fillText(labels[idx]||'?', hx+sq/2, hy+sq*0.7);
+    });
+  }
+
+  // 各駒
+  Object.entries(board).forEach(([key,piece])=>{
+    const [c,r] = key.split('-').map(Number);
+    const px = MARGIN_X + (9-c)*sq;
+    const py = MARGIN_Y + (r-1)*sq;
+    const isGote = piece.player===2;
+
+    // 駒の背景
+    ctx.save();
+    if(isGote) {
+      ctx.translate(px+sq/2, py+sq/2);
+      ctx.rotate(Math.PI);
+      ctx.translate(-sq/2, -sq/2);
+    } else {
+      ctx.translate(px, py);
+    }
+    // 駒の形（五角形）
+    const m2 = sq*0.08, pw = sq-m2*2, ph = sq-m2*2;
+    ctx.beginPath();
+    ctx.moveTo(m2+pw/2, m2*0.3);
+    ctx.lineTo(m2+pw, m2+ph*0.25);
+    ctx.lineTo(m2+pw, m2+ph);
+    ctx.lineTo(m2, m2+ph);
+    ctx.lineTo(m2, m2+ph*0.25);
+    ctx.closePath();
+    ctx.fillStyle = '#f5e8c0';
+    ctx.fill();
+    ctx.strokeStyle = '#8b6914';
+    ctx.lineWidth = 1;
+    ctx.stroke();
+
+    // 駒文字
+    const disp = KOMA_DISP[piece.koma] || piece.koma;
+    const isNari = ['と','馬','龍','竜','成銀','成桂','成香','全','圭','杏'].includes(piece.koma);
+    ctx.fillStyle = isNari ? '#c00' : '#1a0a00';
+    const fontSize = disp.length>1 ? sq*0.33 : sq*0.48;
+    ctx.font = `700 ${fontSize}px 'Noto Serif JP',serif`;
+    ctx.textAlign = 'center';
+    if(disp.length>1) {
+      ctx.fillText(disp[0], sq/2, sq*0.46);
+      ctx.fillText(disp[1], sq/2, sq*0.78);
+    } else {
+      ctx.fillText(disp, sq/2, sq*0.68);
+    }
+    ctx.restore();
+  });
+
+  // フィードバック
+  if(opts.feedback) {
+    const wrong = opts.wrongSquare;
+    if(wrong) {
+      ctx.fillStyle='rgba(239,68,68,0.35)';
+      ctx.fillRect(MARGIN_X+(9-wrong.col)*sq, MARGIN_Y+(wrong.row-1)*sq, sq, sq);
+    }
+  }
+}
+
+// 持ち駒テキスト
+function mochiText(mochi, player) {
+  const order = ['飛','角','金','銀','桂','香','歩'];
+  const parts = order.filter(k=>mochi[k]).map(k=>mochi[k]>1?`${k}×${mochi[k]}`:k);
+  return parts.length ? parts.join('　') : 'なし';
+}
+
+// ===== 状態 =====
+let kifuList = KIFU_DATA;
+let currentKifu = null;
+let selectedGrade = '上級'; // 固定
+let playerName = '';
+let studyMove = 0;
+let studyMaxMove = 50;
+let studyTimer = null;
+let studyTimeLeft = 180;
+let studyBoardData = null;
+let quizMove = 0;
+let quizScore = 0;
+let quizTimeLeft = 180;
+let quizTimer = null;
+let quizBoardData = null;
+let quizShowAnswer = false; // 不正解後の正解表示フラグ
+let quizAfterWrong = false;
+let quizFeedback = false;
+let selectedPiece = null;  // 変更2：選択中の駒 {col, row}
+let currentScoreTab = '上級';
+let currentScoreMode = 'local';
+let globalScores = null;
+
+// ===== スクリーン切替 =====
+function showScreen(id) {
+  document.querySelectorAll('.screen').forEach(s=>s.classList.remove('active'));
+  document.getElementById(id).classList.add('active');
+  if(id==='s-scores'){ renderScoreList(); loadChallengeCount(); }
+  if(id==='s-top'){ renderTopList(); loadChallengeCount(); }
+}
+
+// ===== トップ画面 =====
+function renderTopList() {
+  const el = document.getElementById('top-kifu-list');
+  if(!el) return;
+  el.innerHTML='';
+  if(!kifuList || kifuList.length===0) {
+    el.innerHTML='<div style="color:#f87171;padding:20px;text-align:center">棋譜データの読み込みに失敗しました</div>';
+    return;
+  }
+  kifuList.forEach(k=>{
+    const best = getBestScore(k.id);
+    const badge = best!==null
+      ? `<span style="font-size:11px;color:var(--gold-l);background:rgba(200,168,75,.15);border:1px solid rgba(200,168,75,.3);border-radius:10px;padding:2px 8px">Best:${best}点</span>`
+      : `<span style="font-size:11px;color:var(--dim)">未プレイ</span>`;
+    const item = document.createElement('div');
+    item.className='kifu-item';
+    item.innerHTML=`<div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:6px">
+      <div><span style="color:var(--gold-l);font-weight:700;font-size:13px">${k.title}</span></div>
+      <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+        ${badge}
+        <span class="badge-sente">▲ ${k.sente}</span>
+        <span style="color:var(--dim);font-size:11px">vs</span>
+        <span class="badge-gote">△ ${k.gote}</span>
+      </div></div>`;
+    item.onclick=()=>{ playerName ? goToGradeSelect(k) : goToName(k); };
+    el.appendChild(item);
+  });
+}
+
+function goToName(k) {
+  showScreen('s-name');
+  setTimeout(()=>{
+    document.getElementById('name-input').focus();
+    document.getElementById('name-input').dataset.pending = k.id;
+  },100);
+}
+
+function confirmName() {
+  const v = document.getElementById('name-input').value.trim();
+  if(!v) return;
+  playerName = v;
+  const pid = document.getElementById('name-input').dataset.pending;
+  delete document.getElementById('name-input').dataset.pending;
+  const k = pid ? kifuList.find(x=>x.id===pid) : null;
+  if(k) goToGradeSelect(k);
+  else showScreen('s-top');
+}
+
+function goToGradeSelect(k) {
+  // グレード選択なし・直接学習開始
+  currentKifu = k;
+  selectedGrade = '上級';
+  startStudy();
+}
+
+function selectGrade(grade) {
+  selectedGrade = grade;
+  startStudy();
+}
+
+// ===== 学習フェーズ =====
+function startStudy() {
+  studyMove = 0;
+  studyMaxMove = Math.min(50, currentKifu.moves.length);
+  studyTimeLeft = 180;
+  clearInterval(studyTimer);
+  document.getElementById('study-title').textContent = currentKifu.title;
+  document.getElementById('study-timer').textContent = '3:00';
+  drawStudyBoard();
+  showScreen('s-study');
+  studyTimer = setInterval(()=>{
+    studyTimeLeft--;
+    document.getElementById('study-timer').textContent = formatTime(studyTimeLeft);
+    document.getElementById('study-timer').style.color = studyTimeLeft>60?'var(--gold-l)':studyTimeLeft>30?'#fbbf24':'#f87171';
+    if(studyTimeLeft<=0){ clearInterval(studyTimer); startQuiz(); }
+  },1000);
+}
+
+function drawStudyBoard() {
+  studyBoardData = buildBoard(currentKifu, studyMove);
+  drawBoard('study-board', studyBoardData, {lastMove:studyMove>0});
+  const pct = (studyMove/studyMaxMove*100).toFixed(1);
+  document.getElementById('study-progress').style.width = pct+'%';
+  const infoEl = document.getElementById('study-move-info');
+  const labelEl = document.getElementById('study-move-label');
+  if(studyMove===0) {
+    infoEl.textContent='👉 「次 ▶」ボタンを押して棋譜を記憶してください';
+    infoEl.style.animation='pulse 2s ease-in-out infinite';
+    labelEl.textContent='';
+  } else {
+    infoEl.textContent=`手数：${studyMove} / ${studyMaxMove}`;
+    infoEl.style.animation='none';
+    infoEl.style.background='none';
+    infoEl.style.border='none';
+    infoEl.style.color='var(--muted)';
+    infoEl.style.fontSize='12px';
+    infoEl.style.padding='0';
+    const mv = currentKifu.moves[studyMove-1];
+    const turn = (studyMove-1)%2===0?'▲先手':'△後手';
+    labelEl.innerHTML=`第${studyMove}手：<span style="color:var(--gold-l);font-weight:700">${mv}</span>　${turn}`;
+  }
+  // 持ち駒
+  document.getElementById('study-mochi-sente').innerHTML=`先手の持ち駒：<span>${mochiText(studyBoardData.mochiSente,1)}</span>`;
+  document.getElementById('study-mochi-gote').innerHTML=`後手の持ち駒：<span>${mochiText(studyBoardData.mochiGote,2)}</span>`;
+}
+
+function studyNext() {
+  if(studyMove<studyMaxMove){ studyMove++; drawStudyBoard(); }
+  else startQuiz();
+}
+function studyPrev() {
+  if(studyMove>0){ studyMove--; drawStudyBoard(); }
+}
+function studyNext5() {
+  studyMove = Math.min(studyMove+5, studyMaxMove);
+  drawStudyBoard();
+}
+function studyPrev5() {
+  studyMove = Math.max(studyMove-5, 0);
+  drawStudyBoard();
+}
+
+function levelChoice() { return {basePoint:3}; }
+function maxScore() { return 150; }
+
+function startQuiz() {
+  clearInterval(studyTimer);
+  quizMove=0; quizScore=0; quizTimeLeft=180;
+  quizAfterWrong=false; quizFeedback=false;
+  quizShowAnswer=false; selectedPiece=null;
+  quizBoardData = buildBoard(currentKifu, 0);
+  updateQuizInfo();
+  document.getElementById('quiz-instruction').textContent='動かす駒をクリック → 移動先をクリック';
+  renderQuizBoard();
+  showScreen('s-quiz');
+  setupBoardClick();
+  clearInterval(quizTimer);
+  quizTimer = setInterval(()=>{
+    quizTimeLeft--;
+    document.getElementById('quiz-timer').textContent = formatTime(quizTimeLeft);
+    document.getElementById('quiz-timer').style.color = quizTimeLeft>60?'var(--gold-l)':quizTimeLeft>30?'#fbbf24':'#f87171';
+    if(quizTimeLeft<=0){ clearInterval(quizTimer); finishQuiz(); }
+  },1000);
+}
+
+function updateQuizInfo() {
+  document.getElementById('quiz-move-label').textContent = `第${quizMove+1}問 / ${Math.min(50,currentKifu.moves.length)}問`;
+  document.getElementById('quiz-score-display').textContent = quizScore;
+  document.getElementById('quiz-mochi-sente').innerHTML=`先手の持ち駒：<span>${mochiText(quizBoardData.mochiSente,1)}</span>`;
+  document.getElementById('quiz-mochi-gote').innerHTML=`後手の持ち駒：<span>${mochiText(quizBoardData.mochiGote,2)}</span>`;
+}
+
+function renderQuizBoard() {
+  const opts = {lastMove:quizMove>0};
+  if(selectedPiece) opts.selectedPiece = selectedPiece;
+  if(quizShowAnswer) {
+    const raw = currentKifu.moves[quizMove];
+    const m = parseKifMove(raw);
+    let toCol=m.toCol, toRow=m.toRow;
+    if(m.isSame && quizBoardData.prevTo){ toCol=quizBoardData.prevTo.col; toRow=quizBoardData.prevTo.row; }
+    opts.answerSquare = {col:toCol, row:toRow};
+  }
+  drawBoard('quiz-board', quizBoardData, opts);
+  updateQuizInfo();
+}
+
+// クリック判定（2ステップ：駒選択→移動先選択）
+function setupBoardClick() {
+  const canvas = document.getElementById('quiz-board');
+  canvas.onclick = (e) => {
+    if(quizFeedback) return;
+    const rect = canvas.getBoundingClientRect();
+    const scaleX = canvas.width / rect.width;
+    const scaleY = canvas.height / rect.height;
+    const x = (e.clientX - rect.left) * scaleX;
+    const y = (e.clientY - rect.top)  * scaleY;
+    const sq = Math.floor((Math.min(window.innerWidth-40,440)-MARGIN_X)/9);
+    const col = 9 - Math.floor((x-MARGIN_X)/sq);
+    const row = Math.floor((y-MARGIN_Y)/sq)+1;
+    if(col<1||col>9||row<1||row>9) return;
+
+    const currentPlayer = (quizMove%2===0) ? 1 : 2;
+
+    if(quizShowAnswer) {
+      // 正解マスが表示中 → 正解マスをクリックで次へ
+      const raw = currentKifu.moves[quizMove];
+      const m = parseKifMove(raw);
+      let toCol=m.toCol, toRow=m.toRow;
+      if(m.isSame && quizBoardData.prevTo){ toCol=quizBoardData.prevTo.col; toRow=quizBoardData.prevTo.row; }
+      if(col===toCol && row===toRow) {
+        advanceToNext();
+      }
+      return;
+    }
+
+    if(!selectedPiece) {
+      // ステップ1：駒を選択
+      const piece = quizBoardData.board[`${col}-${row}`];
+      if(piece && piece.player===currentPlayer) {
+        selectedPiece = {col, row};
+        document.getElementById('quiz-instruction').textContent='移動先をクリック（同じ駒を再クリックで選択解除）';
+        renderQuizBoard();
+      }
+    } else {
+      // ステップ2：移動先を選択
+      if(col===selectedPiece.col && row===selectedPiece.row) {
+        // 同じ駒を再クリック → 選択解除
+        selectedPiece = null;
+        document.getElementById('quiz-instruction').textContent='動かす駒をクリック → 移動先をクリック';
+        renderQuizBoard();
+        return;
+      }
+      // 自分の別の駒をクリック → 選択し直し
+      const piece = quizBoardData.board[`${col}-${row}`];
+      if(piece && piece.player===currentPlayer) {
+        selectedPiece = {col, row};
+        document.getElementById('quiz-instruction').textContent='移動先をクリック（同じ駒を再クリックで選択解除）';
+        renderQuizBoard();
+        return;
+      }
+      // 移動先として判定
+      handleAnswer(col, row);
+    }
+  };
+}
+
+function handleAnswer(col, row) {
+  const raw = currentKifu.moves[quizMove];
+  const m = parseKifMove(raw);
+  let toCol=m.toCol, toRow=m.toRow;
+  if(m.isSame && quizBoardData.prevTo){ toCol=quizBoardData.prevTo.col; toRow=quizBoardData.prevTo.row; }
+
+  const ok = col===toCol && row===toRow;
+  quizFeedback=true;
+  selectedPiece=null;
+
+  if(ok) {
+    const pts = quizAfterWrong ? 0 : 3;
+    quizScore += pts;
+    const scoreMsg = pts>0?`✓ 正解 +${pts}点`:'✓ 正解';
+    showFeedbackMsg(scoreMsg,'#4ade80');
+    quizBoardData = buildBoard(currentKifu, quizMove+1);
+    setTimeout(()=>{
+      hideFeedback();
+      quizFeedback=false;
+      quizAfterWrong=false;
+      quizShowAnswer=false;
+      const next = quizMove+1;
+      if(next>=Math.min(50,currentKifu.moves.length)){ quizMove=next; finishQuiz(); return; }
+      quizMove=next;
+      quizBoardData=buildBoard(currentKifu,next);
+      document.getElementById('quiz-instruction').textContent='動かす駒をクリック → 移動先をクリック';
+      renderQuizBoard();
+    },700);
+  } else {
+    showFeedbackMsg('✗ 不正解','#f87171');
+    quizAfterWrong=true;
+    setTimeout(()=>{
+      hideFeedback();
+      quizFeedback=false;
+      quizShowAnswer=true; // 正解マスをハイライト表示
+      document.getElementById('quiz-instruction').textContent='✅ 緑のマスが正解です。クリックして次へ進んでください';
+      renderQuizBoard();
+    },700);
+  }
+}
+
+function advanceToNext() {
+  // 不正解後・正解マスをクリックして次の問題へ
+  quizBoardData = buildBoard(currentKifu, quizMove+1);
+  quizShowAnswer=false; selectedPiece=null;
+  const next = quizMove+1;
+  if(next>=Math.min(50,currentKifu.moves.length)){ quizMove=next; finishQuiz(); return; }
+  quizMove=next;
+  quizBoardData=buildBoard(currentKifu,next);
+  document.getElementById('quiz-instruction').textContent='動かす駒をクリック → 移動先をクリック';
+  renderQuizBoard();
+}
+
+function showFeedbackMsg(text,color) {
+  const ov=document.getElementById('feedback-overlay');
+  const tx=document.getElementById('feedback-text');
+  tx.textContent=text; tx.style.color=color;
+  ov.style.border=`2px solid ${color}`;
+  ov.classList.add('show');
+}
+function hideFeedback(){ document.getElementById('feedback-overlay').classList.remove('show'); }
+
+function abortQuiz(){ clearInterval(quizTimer); finishQuiz(); }
+
+// ===== 結果 =====
+function finishQuiz() {
+  clearInterval(quizTimer);
+  const mx = maxScore();
+  const entry = {
+    player:playerName, score:quizScore, answered:quizMove,
+    grade:selectedGrade,
+    date:new Date().toLocaleDateString('ja-JP'),
+    kifu:{title:currentKifu.title}
+  };
+  const key='shogi_scores';
+  let arr=[]; try{ arr=JSON.parse(localStorage.getItem(key)||'[]'); }catch{}
+  arr=[...arr,entry].sort((a,b)=>b.score-a.score).slice(0,100);
+  try{ localStorage.setItem(key,JSON.stringify(arr)); }catch{}
+  saveBestScore(currentKifu.id,selectedGrade,quizScore);
+  globalScores=null;
+
+  document.getElementById('result-trophy').textContent = quizScore/mx>=0.8?'🏆':quizScore/mx>=0.5?'⭐':'🎯';
+  document.getElementById('result-score').innerHTML=`${quizScore}<span style="font-size:20px">点</span>`;
+  document.getElementById('result-player').textContent=`${playerName} さん`;
+  document.getElementById('result-kifu').textContent=`${currentKifu.title}`;
+  const max50=Math.min(50,currentKifu.moves.length);
+  document.getElementById('result-answered').textContent=quizMove<max50?`${quizMove}手まで回答（途中終了）`:`${max50}手全問回答　最高${mx}点`;
+  document.getElementById('result-perfect').style.display=(quizScore===mx&&quizMove>=max50)?'block':'none';
+  showScreen('s-result');
+}
+
+function playAgain(){ renderTopList(); showScreen('s-top'); }
+
+// ===== ベストスコア =====
+function saveBestScore(id,grade,score) {
+  const k=`shogi_best_${id}_${grade}`;
+  try{ const p=JSON.parse(localStorage.getItem(k)); if(!p||score>p.score) localStorage.setItem(k,JSON.stringify({score})); }catch{}
+}
+function getBestScore(id) {
+  let best=null;
+  for(const g of ['上級','中級','初級']) {
+    try{ const d=JSON.parse(localStorage.getItem(`shogi_best_${id}_${g}`)); if(d&&(best===null||d.score>best)) best=d.score; }catch{}
+  }
+  return best;
+}
+
+// ===== スコアランキング（シンプル版） =====
+function renderScoreList() {
+  const el = document.getElementById('scores-list');
+  const key = 'shogi_scores';
+  let list = []; try { list = JSON.parse(localStorage.getItem(key)||'[]'); } catch {}
+  if(!list.length) { el.innerHTML='<div style="text-align:center;color:var(--dim);padding:32px">まだ記録がありません</div>'; return; }
+  el.innerHTML='';
+  list.forEach((s,i)=>{
+    const rc=i===0?'#ffd700':i===1?'#c0c0c0':i===2?'#cd7f32':'var(--dim)';
+    const bc=i<3?'rgba(200,168,75,.4)':'rgba(255,255,255,.07)';
+    const item=document.createElement('div');
+    item.className='score-item'; item.style.border=`1px solid ${bc}`;
+    item.innerHTML=`<div style="display:flex;align-items:center;gap:10px">
+      <span style="color:${rc};font-weight:700;font-size:14px;min-width:22px">${i+1}</span>
+      <div><div style="font-weight:700;color:var(--text)">${s.player}</div>
+      <div style="font-size:11px;color:var(--muted)">${s.kifu?.title||''}　${s.answered<50?s.answered+'手(途中)':'全'+s.answered+'手'}　${s.date}</div></div></div>
+      <div style="font-size:20px;font-weight:900;color:var(--gold-l);font-family:monospace">${s.score}<span style="font-size:11px">点</span></div>`;
+    el.appendChild(item);
+  });
+}
+function setScoreMode(){} // 互換用ダミー
+function setScoreTab(){} // 互換用ダミー
+
+// ===== チャレンジ回数（囲碁と同じGASを共用） =====
+async function loadChallengeCount() {
+  // 将棋専用カウントが必要な場合は別途GAS URLを設定
+  // 現在は表示のみスキップ
+  const el=document.getElementById('challenge-count');
+  if(el) el.textContent='';
+}
+
+// ===== ユーティリティ =====
+function formatTime(s){ return `${Math.floor(s/60)}:${String(s%60).padStart(2,'0')}`; }
+
+// ===== 初期化 =====
+function init() {
+  renderTopList();
+  loadChallengeCount();
+}
+if(document.readyState==='loading') {
+  document.addEventListener('DOMContentLoaded', init);
+} else {
+  init();
+}
+</script>
+</body>
+</html>
