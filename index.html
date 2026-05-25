@@ -650,7 +650,19 @@ function drawStudyBoard() {
 
 function studyNext() {
   if(studyMove<studyMaxMove){ studyMove++; drawStudyBoard(); }
-  else startQuiz();
+  // 20手到達時は自動でクイズへ移行せず、メッセージを表示してボタンを促す
+  if(studyMove>=studyMaxMove){ showStudyComplete(); }
+}
+function showStudyComplete() {
+  const infoEl = document.getElementById('study-move-info');
+  infoEl.textContent = '✅ ' + studyMaxMove + '手まで確認しました！下の「記憶完了 → クイズへ」を押してください';
+  infoEl.style.animation = 'pulse 1.2s ease-in-out infinite';
+  infoEl.style.background = 'rgba(74,222,128,0.1)';
+  infoEl.style.border = '1px solid rgba(74,222,128,0.3)';
+  infoEl.style.color = '#4ade80';
+  infoEl.style.fontSize = '13px';
+  infoEl.style.padding = '8px 12px';
+  infoEl.style.borderRadius = '4px';
 }
 function studyPrev() {
   if(studyMove>0){ studyMove--; drawStudyBoard(); }
@@ -658,6 +670,7 @@ function studyPrev() {
 function studyNext5() {
   studyMove = Math.min(studyMove+5, studyMaxMove);
   drawStudyBoard();
+  if(studyMove>=studyMaxMove){ showStudyComplete(); }
 }
 function studyPrev5() {
   studyMove = Math.max(studyMove-5, 0);
@@ -688,7 +701,7 @@ function startQuiz() {
 }
 
 function updateQuizInfo() {
-  document.getElementById('quiz-move-label').textContent = `第${quizMove+1}問 / ${Math.min(50,currentKifu.moves.length)}問`;
+  document.getElementById('quiz-move-label').textContent = `第${quizMove+1}問 / ${Math.min(20,currentKifu.moves.length)}問`;
   document.getElementById('quiz-score-display').textContent = quizScore;
   document.getElementById('quiz-mochi-sente').innerHTML=`先手の持ち駒：<span>${mochiText(quizBoardData.mochiSente,1)}</span>`;
   document.getElementById('quiz-mochi-gote').innerHTML=`後手の持ち駒：<span>${mochiText(quizBoardData.mochiGote,2)}</span>`;
@@ -790,7 +803,7 @@ function handleAnswer(col, row) {
       quizAfterWrong=false;
       quizShowAnswer=false;
       const next = quizMove+1;
-      if(next>=Math.min(50,currentKifu.moves.length)){ quizMove=next; finishQuiz(); return; }
+      if(next>=Math.min(20,currentKifu.moves.length)){ quizMove=next; finishQuiz(); return; }
       quizMove=next;
       quizBoardData=buildBoard(currentKifu,next);
       document.getElementById('quiz-instruction').textContent='動かす駒をクリック → 移動先をクリック';
@@ -814,7 +827,7 @@ function advanceToNext() {
   quizBoardData = buildBoard(currentKifu, quizMove+1);
   quizShowAnswer=false; selectedPiece=null;
   const next = quizMove+1;
-  if(next>=Math.min(50,currentKifu.moves.length)){ quizMove=next; finishQuiz(); return; }
+  if(next>=Math.min(20,currentKifu.moves.length)){ quizMove=next; finishQuiz(); return; }
   quizMove=next;
   quizBoardData=buildBoard(currentKifu,next);
   document.getElementById('quiz-instruction').textContent='動かす駒をクリック → 移動先をクリック';
@@ -963,7 +976,7 @@ if(document.readyState==='loading') {
     if (player) TomyStamp.setPlayer(player);
     if (!player) return;
 
-    // スコア：quizScore（100点満点）90点以上でスタンプ獲得
+    // スコア：quizScore（60点満点）54点以上でスタンプ獲得
     var qs = (typeof quizScore === 'number') ? quizScore : 0;
 
     // ジャンル：棋譜名
@@ -972,8 +985,8 @@ if(document.readyState==='loading') {
 
     console.log('[stamp] player=' + player + ' score=' + qs + ' kifu=' + genreName);
 
-    if (qs >= 90) {
-      // correctCountの代わりにスコア90以上を9問正解相当として送信
+    if (qs >= 54) {
+      // 54点以上（60点満点の90%以上）でスタンプ獲得
       TomyStamp.send(GAME_ID, genreName, 9).then(function(r) {
         if (r.ok) {
           console.log('[⭐ stamp] 獲得! score=' + qs);
