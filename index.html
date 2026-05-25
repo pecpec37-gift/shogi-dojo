@@ -517,7 +517,7 @@ let currentKifu = null;
 let selectedGrade = '上級'; // 固定
 let playerName = '';
 let studyMove = 0;
-let studyMaxMove = 50;
+let studyMaxMove = 20;
 let studyTimer = null;
 let studyTimeLeft = 180;
 let studyBoardData = null;
@@ -605,7 +605,7 @@ function selectGrade(grade) {
 // ===== 学習フェーズ =====
 function startStudy() {
   studyMove = 0;
-  studyMaxMove = Math.min(50, currentKifu.moves.length);
+  studyMaxMove = Math.min(20, currentKifu.moves.length);
   studyTimeLeft = 180;
   clearInterval(studyTimer);
   document.getElementById('study-title').textContent = currentKifu.title;
@@ -665,7 +665,7 @@ function studyPrev5() {
 }
 
 function levelChoice() { return {basePoint:3}; }
-function maxScore() { return 150; }
+function maxScore() { return 60; }
 
 function startQuiz() {
   clearInterval(studyTimer);
@@ -853,7 +853,7 @@ function finishQuiz() {
   document.getElementById('result-score').innerHTML=`${quizScore}<span style="font-size:20px">点</span>`;
   document.getElementById('result-player').textContent=`${playerName} さん`;
   document.getElementById('result-kifu').textContent=`${currentKifu.title}`;
-  const max50=Math.min(50,currentKifu.moves.length);
+  const max50=Math.min(20,currentKifu.moves.length);
   document.getElementById('result-answered').textContent=quizMove<max50?`${quizMove}手まで回答（途中終了）`:`${max50}手全問回答　最高${mx}点`;
   document.getElementById('result-perfect').style.display=(quizScore===mx&&quizMove>=max50)?'block':'none';
   showScreen('s-result');
